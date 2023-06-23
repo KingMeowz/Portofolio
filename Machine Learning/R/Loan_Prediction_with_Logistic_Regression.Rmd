@@ -1,0 +1,233 @@
+---
+title: "Loan Prediction With Logistic Regression"
+author: "Abdurrahman Al-atsary"
+date: "2023-05-11"
+output:
+    prettydoc::html_pretty:
+        theme: leonids
+        highlight: github
+---
+
+# Library
+
+```{r}
+library(dplyr)
+library(skimr)
+library(DataExplorer)
+library(ggplot2)
+library("ROCR")
+library(leaps)
+```
+
+# Dataset
+
+```{r}
+data <- read.csv("train.csv")
+glimpse(data)
+```
+
+```{r}
+dim(data)
+```
+
+# Data Wrangling
+
+## Cek Missing Value
+
+```{r}
+plot_intro(data = data,
+           geom_label_args = list(size=2.5))
+```
+
+```{r}
+skim_without_charts(data)
+```
+
+```{r}
+sum(is.na(data))
+```
+
+```{r}
+data <- na.omit(data)
+data <- data[-1]
+head(data)
+```
+
+# **Eksplorasi Data Analisis**
+
+## Ringkasan Data
+
+```{r}
+summary(data)
+```
+
+## Sebaran Data
+
+```{r}
+plot_histogram(data = data, nrow=3,ncol = ,
+               geom_histogram_args = list(fill="steelblue"),
+               ggtheme = theme_bw()
+               )
+```
+
+## Frekuensi Variable Respons
+
+```{r}
+table(data$Loan_Status)
+```
+
+```{r}
+ggplot(data, aes(x = Loan_Status, color = Loan_Status)) +
+  geom_bar(fill = "white") + theme_classic() +
+  labs(title = "Jumlah YES vs NO",
+       x = "Loan Status",
+       y = "Jumlah")
+```
+
+## Oversampling
+
+```{r}
+index_f <- which((data$Loan_Status == "Y") == TRUE)
+over_f <- data[index_f, ]
+data1 <- rbind(data, over_f)
+index_f <- which((data1$Loan_Status == "N") == TRUE)
+over_f <- data[index_f, ]
+data2 <- rbind(data1, over_f)
+index_f <- which((data2$Loan_Status == "N") == TRUE)
+over_f <- data[index_f, ]
+data <- rbind(data2, over_f)
+
+data <- na.omit(data)
+dim(data)
+```
+
+```{r}
+ggplot(data, aes(x = Loan_Status, color = Loan_Status)) +
+  geom_bar(fill = "white") + theme_classic() +
+  labs(title = "Jumlah YES vs NO",
+       x = "Loan Status",
+       y = "Jumlah")
+```
+
+```{r}
+table(data$Loan_Status)
+```
+
+## Merubah Respon Menjadi 0 dan 1
+
+```{r}
+head(data$Loan_Status)
+data$Loan_Status <- ifelse(data$Loan_Status == "Y", 1, 0)
+head(data$Loan_Status)
+```
+
+## Korelasi
+
+```{r}
+plot_correlation(data = data %>% select_if(is.numeric),type = c("all"), maxcat = 40L, title = "Korelasi")
+```
+
+# Regresi Logistik
+
+## Split Data
+
+```{r}
+set.seed(113)
+trainid <- sample(1:nrow(data), nrow(data)*0.8)
+training <- data[trainid,]
+testing <- data[-trainid,]
+```
+
+## Mencari Parameter Terbaik
+
+### Threshold
+
+```{r}
+threshold <- c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)
+best_threshold <- 0
+best_accuracy <- 0
+
+for(i in threshold){
+  model_logit <- glm(Loan_Status~., data = training, family = "binomial"(link="logit"))
+  fitted.results <- predict(model_logit,newdata=testing,type='response')
+  fitted.results <- ifelse(fitted.results > i, 1,0)
+  Accuracy.logistic <- round(mean(fitted.results == testing$Loan_Status), digits = 2)
+  if (Accuracy.logistic > best_accuracy) {
+      best_accuracy <- Accuracy.logistic
+      best_threshold <- i
+    }
+}
+
+print(paste("Best Threshold:", best_threshold))
+```
+
+## Fit Model
+
+```{r}
+model_logit <- glm(Loan_Status~., data = training, family = "binomial"(link="logit"))
+summary(model_logit)
+```
+
+## Evaluasi Model
+
+```{r}
+fitted.results <- predict(model_logit,newdata=testing,type='response')
+fitted.results <- ifelse(fitted.results > best_threshold, 1,0)
+confusion_matrix <- table(fitted.results, testing$Loan_Status)
+confusion_matrix
+```
+
+```{r}
+precision <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+print(paste("Presisi:", precision))
+```
+
+```{r}
+specificity <- confusion_matrix[1, 1] / sum(confusion_matrix[, 1])
+print(paste("Spesifisitas:", specificity))
+```
+
+```{r}
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Akurasi:", accuracy))
+```
+
+```{r}
+recall <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+print(paste("Recall:", recall))
+```
+
+```{r}
+f1_score <- 2 * (precision * recall) / (precision + recall)
+print(paste("F1-Score:", f1_score))
+```
+
+```{r}
+
+predict <- fitted(model_logit)
+pred <- prediction(predict, training$Loan_Status)
+perf <- performance(pred, measure = "tpr", x.measure = "fpr")
+plot(perf, main="sensitivity vs false positive rate",colorize=TRUE)
+```
+
+## Plotting Logistic Regression
+
+```{r}
+# Mengubah variabel binary menjadi faktor
+data$Loan_Status <- factor(data$Loan_Status, levels = c(0,1), labels = c("Not Approved", "Approved"))
+data$Credit_History <- factor(data$Credit_History, levels = c(0,1), labels = c("No Credit History", "Has Credit History"))
+
+# Membuat model regresi logistik
+model <- glm(Loan_Status ~ Credit_History, data = data, family = "binomial"(link="logit"))
+
+# Membuat plot
+ggplot(data, aes(x = Credit_History, y = Loan_Status, color = Credit_History)) +
+  geom_point(size = 5) +
+  stat_smooth(method = "glm", method.args = list(family = "binomial"), se = FALSE, aes(x = Credit_History, y = Loan_Status, color = Credit_History)) +
+  scale_color_manual(values = c("No Credit History" = "red", "Has Credit History" = "blue")) +
+  guides(fill = guide_legend()) +
+  theme_bw() +
+  xlab("Credit History") +
+  ylab("Loan Status") +
+  ggtitle("Logistic Regression")
+```
